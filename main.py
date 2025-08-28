@@ -1,6 +1,22 @@
 import streamlit as st
 import db
 from ai import generate_questions
+import gspread
+from google.oauth2.service_account import Credentials
+
+# Load secrets
+service_account_info = dict(st.secrets["gspread_service_account"])
+
+# Authorize Google Sheets
+credentials = Credentials.from_service_account_info(service_account_info)
+client = gspread.authorize(credentials)
+
+# Open sheet
+sheet = client.open(st.secrets["GOOGLE_SHEET"]["NAME"]).sheet1
+
+# Access Groq API key
+GROQ_API_KEY = st.secrets["GROQ"]["API_KEY"]
+
 
 # Initialize database
 db.init_db()
@@ -85,5 +101,6 @@ elif st.session_state.step == 2:
         for i, (q, a) in enumerate(st.session_state.answers.items()):
             st.write(f"**Q{i+1}: {q}**")
             st.write(f"**A:** {a}\n")
+
 
 
