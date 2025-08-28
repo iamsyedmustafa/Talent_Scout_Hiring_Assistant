@@ -85,3 +85,5 @@ elif st.session_state.step == 2:
         for i, (q, a) in enumerate(st.session_state.answers.items()):
             st.write(f"**Q{i+1}: {q}**")
             st.write(f"**A:** {a}\n")
+
+
