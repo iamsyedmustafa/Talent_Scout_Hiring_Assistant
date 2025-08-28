@@ -1,12 +1,11 @@
-import os
+import streamlit as st
 from groq import Groq
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load API key and model from Streamlit secrets
+MODEL = st.secrets.get("MODEL", "llama-3.1-8b-instant")
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-MODEL = os.getenv("MODEL", "llama-3.1-8b-instant")
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = Groq(api_key=GROQ_API_KEY)
 
 def ask_llm(prompt):
     response = client.chat.completions.create(
@@ -47,4 +46,5 @@ def generate_questions(tech_stack: str, num_questions: int = 5):
         print(f"LLM Error: {e}")
         # Fallback questions
         return [f"Sample question {i+1} on {tech_stack}" for i in range(num_questions)]
+
 
