@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 SERVICE_ACCOUNT_FILE = "service_account.json"
 
 # Google Sheets name
-SHEET_NAME = "TalentScout Data"   # change this to your sheet name
+SHEET_NAME = "Talentscout Responses"   # change this to your sheet name
 
 # Load credentials from JSON file
 with open(SERVICE_ACCOUNT_FILE, "r") as f:
@@ -51,6 +51,7 @@ def get_all_candidates():
 def get_all_responses():
     """Fetch all responses"""
     return responses_sheet.get_all_records()
+
 
 
 
