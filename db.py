@@ -1,78 +1,42 @@
-import sqlite3
+import streamlit as st
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json
 
-# ---------- Database Initialization ----------
-def init_db():
-    conn = sqlite3.connect("hiring_assistant.db")
-    cursor = conn.cursor()
+# ---------------- Google Sheets Setup ----------------
 
-    # Candidate Info Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS candidates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            email TEXT,
-            phone TEXT,
-            experience INTEGER,
-            position TEXT,
-            location TEXT,
-            tech_stack TEXT
-        )
-    ''')
+# Read service account JSON from Streamlit secrets
+creds_json = st.secrets["gspread_service_account"]
 
-    # Responses Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            candidate_id INTEGER,
-            question TEXT,
-            answer TEXT,
-            FOREIGN KEY(candidate_id) REFERENCES candidates(id)
-        )
-    ''')
+# Load credentials
+creds_dict = json.loads(creds_json)
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
 
-    conn.commit()
-    conn.close()
+# Open your Google Sheet by name
+sheet_name = st.secrets["google_sheet_name"]  # e.g., "Talentscout Responses"
+candidates_sheet = client.open(sheet_name).worksheet("candidates")
+responses_sheet = client.open(sheet_name).worksheet("responses")
 
-# ---------- Insert Functions ----------
+# ---------------- Insert Functions ----------------
+
 def insert_candidate(name, email, phone, experience, position, location, tech_stack):
-    conn = sqlite3.connect("hiring_assistant.db")
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        INSERT INTO candidates (name, email, phone, experience, position, location, tech_stack)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (name, email, phone, experience, position, location, tech_stack))
-
-    candidate_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
+    all_rows = candidates_sheet.get_all_values()
+    candidate_id = len(all_rows)  # simple incremental id
+    candidates_sheet.append_row([candidate_id, name, email, phone, experience, position, location, tech_stack])
     return candidate_id
 
 def insert_response(candidate_id, question, answer):
-    conn = sqlite3.connect("hiring_assistant.db")
-    cursor = conn.cursor()
+    responses_sheet.append_row([candidate_id, question, answer])
 
-    cursor.execute('''
-        INSERT INTO responses (candidate_id, question, answer)
-        VALUES (?, ?, ?)
-    ''', (candidate_id, question, answer))
+# ---------------- Fetch Functions ----------------
 
-    conn.commit()
-    conn.close()
-
-# ---------- Fetch Functions ----------
 def get_all_candidates():
-    conn = sqlite3.connect("hiring_assistant.db")
-    cursor = conn.cursor()
+    return candidates_sheet.get_all_values()[1:]  # skip header
 
-    cursor.execute("SELECT * FROM candidates")
-    rows = cursor.fetchall()
+def get_responses_for_candidate(candidate_id):
+    rows = responses_sheet.get_all_values()[1:]  # skip header
+    return [(q, a) for cid, q, a in rows if int(cid) == int(candidate_id)]
 
-def get_candidate_by_id(candidate_id):
-    conn = sqlite3.connect("hiring_assistant.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM candidates WHERE id = ?", (candidate_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row
 
