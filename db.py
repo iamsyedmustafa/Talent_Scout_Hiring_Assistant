@@ -1,42 +1,56 @@
-import streamlit as st
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import json
+from google.oauth2.service_account import Credentials
 
-# ---------------- Google Sheets Setup ----------------
+# Path to your service account JSON file (keep this file in your project folder)
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
-# Read service account JSON from Streamlit secrets
-creds_json = st.secrets["gspread_service_account"]
+# Google Sheets name
+SHEET_NAME = "TalentScout Data"   # change this to your sheet name
 
-# Load credentials
-creds_dict = json.loads(creds_json)
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
+# Load credentials from JSON file
+with open(SERVICE_ACCOUNT_FILE, "r") as f:
+    creds_dict = json.load(f)
 
-# Open your Google Sheet by name
-sheet_name = st.secrets["google_sheet_name"]  # e.g., "Talentscout Responses"
-candidates_sheet = client.open(sheet_name).worksheet("candidates")
-responses_sheet = client.open(sheet_name).worksheet("responses")
+# Define the scope
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# ---------------- Insert Functions ----------------
+# Authorize with Google
+credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+client = gspread.authorize(credentials)
 
-def insert_candidate(name, email, phone, experience, position, location, tech_stack):
-    all_rows = candidates_sheet.get_all_values()
-    candidate_id = len(all_rows)  # simple incremental id
-    candidates_sheet.append_row([candidate_id, name, email, phone, experience, position, location, tech_stack])
-    return candidate_id
+# Open the spreadsheet
+spreadsheet = client.open(SHEET_NAME)
 
-def insert_response(candidate_id, question, answer):
-    responses_sheet.append_row([candidate_id, question, answer])
+# Access both sheets
+candidates_sheet = spreadsheet.worksheet("candidates")
+responses_sheet = spreadsheet.worksheet("responses")
 
-# ---------------- Fetch Functions ----------------
+# ---------- Utility Functions ---------- #
+
+def add_candidate(candidate_data):
+    """
+    Add a new candidate to the candidates sheet.
+    candidate_data should be a list in this order:
+    [id, name, email, phone, experience, position, location, tech_stack]
+    """
+    candidates_sheet.append_row(candidate_data)
+
+def add_response(response_data):
+    """
+    Add a response to the responses sheet.
+    response_data should be a list in this order:
+    [candidate_id, question, answer]
+    """
+    responses_sheet.append_row(response_data)
 
 def get_all_candidates():
-    return candidates_sheet.get_all_values()[1:]  # skip header
+    """Fetch all candidates"""
+    return candidates_sheet.get_all_records()
 
-def get_responses_for_candidate(candidate_id):
-    rows = responses_sheet.get_all_values()[1:]  # skip header
-    return [(q, a) for cid, q, a in rows if int(cid) == int(candidate_id)]
+def get_all_responses():
+    """Fetch all responses"""
+    return responses_sheet.get_all_records()
+
 
 
