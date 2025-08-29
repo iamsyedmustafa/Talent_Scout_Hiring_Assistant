@@ -1,27 +1,17 @@
 import streamlit as st
-import db
 from ai import generate_questions
-import gspread
-from google.oauth2.service_account import Credentials
+import db
 
-# Load secrets
-service_account_info = dict(st.secrets["gspread_service_account"])
+st.set_page_config(page_title="Talentscout - AI Hiring Assistant", page_icon="💼", layout="centered")
 
-# Authorize Google Sheets
-credentials = Credentials.from_service_account_info(service_account_info)
-client = gspread.authorize(credentials)
+# ---------- Bootstrapping ----------
+try:
+    db.init_db()
+except Exception as e:
+    st.error("Google Sheets connection failed. Check your secrets and sheet name.")
+    st.stop()
 
-# Open sheet
-sheet = client.open(st.secrets["GOOGLE_SHEET"]["NAME"]).sheet1
-
-# Access Groq API key
-GROQ_API_KEY = st.secrets["GROQ"]["API_KEY"]
-
-
-# Initialize database
-db.init_db()
-
-# ---------------- Session State Initialization ----------------
+# ---------- Session State ----------
 if "candidate_id" not in st.session_state:
     st.session_state.candidate_id = None
 if "questions" not in st.session_state:
@@ -31,76 +21,88 @@ if "current_q" not in st.session_state:
 if "answers" not in st.session_state:
     st.session_state.answers = {}
 if "step" not in st.session_state:
-    st.session_state.step = 1  # Step 1: Candidate Info
+    st.session_state.step = 1  # 1: Info form, 2: Q&A
 
-st.title("💼 Talentscout - AI Hiring Assistant at PGAGI")
+st.title("💼 Talentscout - AI Hiring Assistant")
 
-# ---------------- Step 0: Greeting ----------------
-# ---------------- Step 1: Candidate Info ----------------
+# ---------- Step 1: Candidate Info ----------
 if st.session_state.step == 1:
-    st.info("👋 Hello! I am Talentscout, your AI hiring assistant at PGAGI. Please enter your information to proceed.")
-    
-    # Candidate Info Form
+    st.info("👋 I’m Talentscout. Please enter your details to begin your interview.")
+
     with st.form("candidate_form"):
-        name = st.text_input("Full Name")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone")
-        experience = st.number_input("Years of Experience", min_value=0, max_value=50, step=1)
-        position = st.text_input("Position Applied For")
-        location = st.text_input("Location")
-        tech_stack = st.text_area("Tech Stack (comma separated)")
+        name = st.text_input("Full Name *")
+        email = st.text_input("Email *")
+        phone = st.text_input("Phone *")
+        experience = st.number_input("Years of Experience", min_value=0, max_value=50, step=1, value=0)
+        position = st.text_input("Position Applied For *")
+        location = st.text_input("Location *")
+        tech_stack = st.text_area("Tech Stack (comma-separated) *", placeholder="Python, SQL, TensorFlow")
 
         submitted = st.form_submit_button("Save & Continue")
 
         if submitted:
-            if all([name, email, phone, position, location, tech_stack]):
-                candidate_id = db.insert_candidate(
-                    name, email, phone, experience, position, location, tech_stack
+            if all([name.strip(), email.strip(), phone.strip(), position.strip(), location.strip(), tech_stack.strip()]):
+                cid = db.insert_candidate(
+                    name.strip(), email.strip(), phone.strip(), int(experience),
+                    position.strip(), location.strip(), tech_stack.strip()
                 )
-                st.session_state.candidate_id = candidate_id
-                st.session_state.info_saved = True  # Flag to show proceed button
+                st.session_state.candidate_id = cid
+                st.session_state.info_saved = True
             else:
-                st.error("⚠️ Please fill all required fields!")
+                st.error("⚠️ Please fill all required fields.")
 
-# ---------------- Step 1b: Proceed Button ----------------
-if st.session_state.get("info_saved", False) and st.session_state.step == 1:
-    st.success("✅ Great! Your information has been saved.")
-    st.info("Now, I would like to ask you a few technical questions based on your tech stack.")
-    
-    if st.button("Okay, let's proceed!"):
-        st.session_state.step = 2  # Move to Q&A step
-        st.session_state.info_saved = False  # reset flag
+    if st.session_state.get("info_saved"):
+        st.success("✅ Your information has been saved.")
+        st.info("Next, I’ll ask a few technical questions based on your tech stack.")
+        if st.button("Okay, let's proceed!"):
+            st.session_state.step = 2
+            st.session_state.info_saved = False
 
-# ---------------- Step 2: Technical Q&A ----------------
+# ---------- Step 2: Technical Q&A ----------
 elif st.session_state.step == 2:
     candidate = db.get_candidate_by_id(st.session_state.candidate_id)
+    if not candidate:
+        st.error("Candidate not found. Please go back and re-enter details.")
+        if st.button("Start Over"):
+            st.session_state.step = 1
+        st.stop()
+
     tech_stack = candidate[7]  # tech_stack column
-
-    # Generate questions once
     if not st.session_state.questions:
-        st.session_state.questions = generate_questions(tech_stack)
+        st.session_state.questions = generate_questions(tech_stack, num_questions=8)
 
-    # Ask current question
     if st.session_state.current_q < len(st.session_state.questions):
         q = st.session_state.questions[st.session_state.current_q]
         st.subheader(f"Q{st.session_state.current_q + 1}: {q}")
 
-        answer = st.text_area("Your answer:", key=f"answer_{st.session_state.current_q}")
-        if st.button("Submit Answer"):
-            if answer.strip():
-                db.insert_response(st.session_state.candidate_id, q, answer.strip())
-                st.session_state.answers[q] = answer.strip()
-                st.session_state.current_q += 1
-            else:
-                st.warning("⚠️ Please enter an answer before submitting.")
+        answer = st.text_area("Your answer:", key=f"answer_{st.session_state.current_q}", height=150)
 
-    # All questions answered
+        cols = st.columns(2)
+        with cols[0]:
+            if st.button("Submit Answer"):
+                if answer.strip():
+                    db.insert_response(st.session_state.candidate_id, q, answer.strip())
+                    st.session_state.answers[q] = answer.strip()
+                    st.session_state.current_q += 1
+                    st.experimental_rerun()
+                else:
+                    st.warning("⚠️ Please enter an answer before submitting.")
+        with cols[1]:
+            if st.button("Skip"):
+                db.insert_response(st.session_state.candidate_id, q, "(skipped)")
+                st.session_state.current_q += 1
+                st.experimental_rerun()
+
     else:
         st.success("🎉 Thank you! Your responses have been recorded. We will reach out to you soon.")
-        st.subheader("Your Answers Summary:")
-        for i, (q, a) in enumerate(st.session_state.answers.items()):
-            st.write(f"**Q{i+1}: {q}**")
-            st.write(f"**A:** {a}\n")
-
+        st.subheader("Your Answers Summary")
+        for i, (q, a) in enumerate(st.session_state.answers.items(), start=1):
+            st.markdown(f"**Q{i}: {q}**")
+            st.markdown(f"**A:** {a}")
+        if st.button("Start New Interview"):
+            for k in ["candidate_id","questions","current_q","answers","step","info_saved"]:
+                st.session_state.pop(k, None)
+            st.session_state.step = 1
+            st.experimental_rerun()
 
 
