@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # Spreadsheet + worksheets (set the spreadsheet name in secrets)
-SPREADSHEET_NAME = st.secrets["google_sheet"]["name"]
+SPREADSHEET_NAME = st.secrets["general"]["google_sheet_name"]
 CANDIDATES_WS = "candidates"
 RESPONSES_WS  = "responses"
 
@@ -83,6 +83,7 @@ def insert_response(candidate_id: int, question: str, answer: str):
     ws = _get_responses_ws()
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     ws.append_row([candidate_id, question, answer, ts])
+
 
 
 
