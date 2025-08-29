@@ -1,56 +1,89 @@
+import time
+from typing import List, Optional
+import streamlit as st
 import gspread
-import json
 from google.oauth2.service_account import Credentials
 
-# Path to your service account JSON file (keep this file in your project folder)
-SERVICE_ACCOUNT_FILE = "service_account.json"
+# Spreadsheet + worksheets (set the spreadsheet name in secrets)
+SPREADSHEET_NAME = st.secrets["google_sheet"]["name"]
+CANDIDATES_WS = "candidates"
+RESPONSES_WS  = "responses"
 
-# Google Sheets name
-SHEET_NAME = "Talentscout Responses"   # change this to your sheet name
+# --- Auth via Streamlit secrets (works locally & on Cloud) ---
+_creds = Credentials.from_service_account_info(st.secrets["gspread_service_account"])
+_client = gspread.authorize(_creds)
 
-# Load credentials from JSON file
-with open(SERVICE_ACCOUNT_FILE, "r") as f:
-    creds_dict = json.load(f)
+def _open_or_create_worksheet(spreadsheet, title: str, headers: List[str]):
+    try:
+        ws = spreadsheet.worksheet(title)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title=title, rows=1000, cols=max(10, len(headers)))
+        ws.append_row(headers)
+    # Ensure headers exist (first row)
+    first_row = ws.row_values(1)
+    if [h.lower() for h in first_row] != [h.lower() for h in headers]:
+        if first_row:
+            # Replace row 1 with headers
+            ws.delete_rows(1)
+        ws.insert_row(headers, 1)
+    return ws
 
-# Define the scope
-scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+def init_db():
+    """Create spreadsheet tabs and headers if missing."""
+    ss = _client.open(SPREADSHEET_NAME)
+    _open_or_create_worksheet(ss, CANDIDATES_WS,
+        ["id","name","email","phone","experience","position","location","tech_stack","timestamp"])
+    _open_or_create_worksheet(ss, RESPONSES_WS,
+        ["candidate_id","question","answer","timestamp"])
 
-# Authorize with Google
-credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-client = gspread.authorize(credentials)
+def _get_candidates_ws():
+    ss = _client.open(SPREADSHEET_NAME)
+    return ss.worksheet(CANDIDATES_WS)
 
-# Open the spreadsheet
-spreadsheet = client.open(SHEET_NAME)
+def _get_responses_ws():
+    ss = _client.open(SPREADSHEET_NAME)
+    return ss.worksheet(RESPONSES_WS)
 
-# Access both sheets
-candidates_sheet = spreadsheet.worksheet("candidates")
-responses_sheet = spreadsheet.worksheet("responses")
+def _next_candidate_id(ws) -> int:
+    values = ws.col_values(1)  # id column (including header)
+    if len(values) <= 1:
+        return 1
+    # last non-empty id
+    for v in reversed(values[1:]):
+        try:
+            return int(v) + 1
+        except:
+            continue
+    return 1
 
-# ---------- Utility Functions ---------- #
+def insert_candidate(name: str, email: str, phone: str, experience: int,
+                     position: str, location: str, tech_stack: str) -> int:
+    ws = _get_candidates_ws()
+    cid = _next_candidate_id(ws)
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    ws.append_row([cid, name, email, phone, experience, position, location, tech_stack, ts])
+    return cid
 
-def add_candidate(candidate_data):
+def get_candidate_by_id(candidate_id: int) -> Optional[list]:
     """
-    Add a new candidate to the candidates sheet.
-    candidate_data should be a list in this order:
-    [id, name, email, phone, experience, position, location, tech_stack]
+    Return the row as a list matching header order:
+    [id, name, email, phone, experience, position, location, tech_stack, timestamp]
     """
-    candidates_sheet.append_row(candidate_data)
+    ws = _get_candidates_ws()
+    ids = ws.col_values(1)[1:]  # skip header
+    for idx, v in enumerate(ids, start=2):  # row index in sheet
+        try:
+            if int(v) == int(candidate_id):
+                return ws.row_values(idx)
+        except:
+            continue
+    return None
 
-def add_response(response_data):
-    """
-    Add a response to the responses sheet.
-    response_data should be a list in this order:
-    [candidate_id, question, answer]
-    """
-    responses_sheet.append_row(response_data)
+def insert_response(candidate_id: int, question: str, answer: str):
+    ws = _get_responses_ws()
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    ws.append_row([candidate_id, question, answer, ts])
 
-def get_all_candidates():
-    """Fetch all candidates"""
-    return candidates_sheet.get_all_records()
-
-def get_all_responses():
-    """Fetch all responses"""
-    return responses_sheet.get_all_records()
 
 
 
